@@ -1,0 +1,500 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>抽籤分組</title>
+  <style>
+    :root{
+      --bg:#0b1020;          /* 深色背景 */
+      --panel:#131a2a;       /* 面板底 */
+      --muted:#8ea0c6;       /* 次要字色 */
+      --text:#e8eeff;        /* 主要字色 */
+      --accent:#6aa6ff;      /* 強調色 */
+      --ok:#32d296;
+      --warn:#ffcc00;
+      --danger:#ff6b6b;
+      --card-blue:#3b82f6;   /* 藍 */
+      --card-red:#ef4444;    /* 紅 */
+      --card-green:#22c55e;  /* 綠 */
+      --card-yellow:#eab308; /* 黃 */
+      --border:#24324d;
+    }
+    *{box-sizing:border-box}
+    html,body{height:100%;}
+    body{
+      margin:0; background:radial-gradient(1200px 700px at 20% -10%, #1a2340 0%, var(--bg) 60%);
+      color:var(--text); font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", Arial, sans-serif;
+    }
+    h1{font-size:22px; margin:0 0 12px 0; letter-spacing:.5px}
+
+    .app{display:flex; gap:14px; padding:16px; height:100vh;}
+
+    .left, .right{
+      background:linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0));
+      border:1px solid var(--border); border-radius:14px; padding:14px; min-height:0;
+      box-shadow: 0 10px 30px rgba(0,0,0,.25), inset 0 1px 0 rgba(255,255,255,.04);
+    }
+    .left{flex:1; display:flex; flex-direction:column;}
+    .right{flex:2; display:flex; flex-direction:column;}
+
+    .controls{display:grid; grid-template-columns: 1fr; gap:10px; margin-bottom:12px}
+    .row{display:flex; align-items:center; gap:10px; flex-wrap:wrap}
+
+    input[type="number"], input[type="text"], .pseudo-input{
+      background:#0e1527; border:1px solid var(--border); color:var(--text); border-radius:10px; padding:10px 12px; outline:none;
+      transition:border-color .15s ease;
+    }
+    input[type="number"]:focus{border-color:var(--accent)}
+
+    button{
+      background:linear-gradient(180deg, #2a3a60, #1b2744);
+      color:var(--text); border:1px solid var(--border); border-radius:10px; padding:10px 14px; cursor:pointer;
+      transition: transform .05s ease, opacity .2s ease, filter .2s ease, background .2s ease;
+    }
+    button:active{transform:translateY(1px)}
+    button:disabled{opacity:.5; cursor:not-allowed; filter:saturate(.4)}
+
+    .file{position:relative;}
+    .file input{display:none}
+    .file .label{display:inline-flex; align-items:center; gap:8px}
+
+    .stats{font-size:13px; color:var(--muted)}
+
+    .list-wrap{flex:1; min-height:0; display:flex; flex-direction:column}
+    .list-head{display:flex; justify-content:space-between; align-items:center; margin:6px 2px 8px}
+
+    .name-list{
+      flex:1; min-height:0; overflow:auto; border:1px solid var(--border); border-radius:12px; background:#0e1527;
+    }
+    .name-item{padding:10px 12px; border-bottom:1px solid rgba(255,255,255,.04); cursor:pointer; user-select:none;}
+    .name-item:last-child{border-bottom:none}
+    .name-item:hover{background:rgba(106,166,255,.08)}
+    .name-item.disabled{color:#7a87a8; cursor:not-allowed; background:transparent}
+    .name-item.selected{outline:2px solid var(--accent); background:rgba(106,166,255,.12)}
+
+    .cards{display:grid; grid-template-columns: repeat(4, minmax(120px,1fr)); gap:12px; margin-bottom:12px;}
+
+    .card{
+      perspective:1000px; height:120px; border-radius:14px; position:relative; filter:drop-shadow(0 6px 16px rgba(0,0,0,.35));
+    }
+    .card-inner{
+      position:absolute; inset:0; transition: transform .6s cubic-bezier(.2,.65,.2,1);
+      transform-style: preserve-3d;
+    }
+    .card.covered .card-inner{transform: rotateY(0deg)}
+    .card.revealed .card-inner{transform: rotateY(180deg)}
+
+    .face{
+      position:absolute; inset:0; backface-visibility:hidden; border-radius:14px; display:flex; align-items:center; justify-content:center;
+      border:1px solid rgba(0,0,0,.18);
+    }
+    .front{background:linear-gradient(180deg, #1b2744, #0e1527); color:#c9d6ff; font-weight:700; letter-spacing:2px}
+.front.blue{background:linear-gradient(180deg, var(--card-blue), #2b5fb6); color:#fff;}
+.front.red{background:linear-gradient(180deg, var(--card-red), #b12b2b); color:#fff;}
+.front.green{background:linear-gradient(180deg, var(--card-green), #15803d); color:#fff;}
+.front.yellow{background:linear-gradient(180deg, var(--card-yellow), #b58107); color:#fff;}	
+	
+    .back{transform: rotateY(180deg); color:#0d1222; font-weight:900; font-size:32px; text-shadow: 0 2px 0 rgba(255,255,255,.5)}
+
+    .back.blue{background:linear-gradient(180deg, var(--card-blue), #2b5fb6)}
+    .back.red{background:linear-gradient(180deg, var(--card-red), #b12b2b)}
+    .back.green{background:linear-gradient(180deg, var(--card-green), #15803d)}
+    .back.yellow{background:linear-gradient(180deg, var(--card-yellow), #b58107)}
+
+    .hint{font-size:13px; color:var(--muted); margin:2px 0 10px}
+
+    .results-wrap{flex:1; min-height:0; display:flex; flex-direction:column}
+    .grid{
+      flex:1; min-height:0; overflow:auto; border:1px solid var(--border); border-radius:12px; background:#0e1527; padding:10px; display:grid; gap:10px;
+    }
+    /* 動態設定欄數 */
+    .grid.cols-1{grid-template-columns: repeat(1, minmax(180px, 1fr));}
+    .grid.cols-2{grid-template-columns: repeat(2, minmax(180px, 1fr));}
+    .grid.cols-3{grid-template-columns: repeat(3, minmax(180px, 1fr));}
+    .grid.cols-4{grid-template-columns: repeat(4, minmax(180px, 1fr));}
+    .grid.cols-5{grid-template-columns: repeat(5, minmax(180px, 1fr));}
+    .grid.cols-6{grid-template-columns: repeat(6, minmax(180px, 1fr));}
+    .grid.cols-7{grid-template-columns: repeat(7, minmax(180px, 1fr));}
+    .grid.cols-8{grid-template-columns: repeat(8, minmax(180px, 1fr));}
+    .grid.cols-9{grid-template-columns: repeat(9, minmax(180px, 1fr));}
+    .grid.cols-10{grid-template-columns: repeat(10, minmax(180px, 1fr));}
+
+    .group-col{background:linear-gradient(180deg, rgba(255,255,255,.02), rgba(255,255,255,.0)); border:1px solid var(--border); border-radius:10px; display:flex; flex-direction:column; min-height:120px}
+    .group-head{padding:8px 10px; border-bottom:1px dashed rgba(255,255,255,.08); display:flex; justify-content:space-between; align-items:center}
+    .group-title{font-weight:700}
+    .group-cap{font-size:12px; color:var(--muted)}
+    .members{padding:8px 10px; display:flex; flex-direction:column; gap:8px}
+    .member{padding:6px 8px; background:#111a30; border:1px solid rgba(255,255,255,.06); border-radius:8px}
+
+    .footer-note{font-size:12px; color:var(--muted); margin-top:6px}
+
+    /* 高度調整，確保左右兩表格都可捲動 */
+    .name-list, .grid{max-height: calc(100vh - 260px);} /* 依上方控制區高度大致推估 */
+
+  </style>
+</head>
+<body>
+  <div class="app">
+    <!-- 左側 -->
+    <section class="left">
+      <h1>抽籤分組 · 左側（操作與姓名）</h1>
+      <div class="controls">
+        <div class="row">
+          <label class="file">
+            <input id="fileInput" type="file" accept=".txt,text/plain" />
+            <button id="btnImport" class="label">📥 匯入姓名 (TXT, UTF-8)</button>
+          </label>
+          <span class="stats" id="stats">尚未匯入名單</span>
+        </div>
+        <div class="row">
+          <label for="groupCount">組別數量 G：</label>
+          <input id="groupCount" type="number" min="1" placeholder="請輸入組數 (G)" style="width:160px">
+          <button id="btnStart" disabled>▶️ 開始分組</button>
+          <button id="btnReset" disabled>🔄 重新分組</button>
+        </div>
+      </div>
+
+      <div class="list-wrap">
+        <div class="list-head">
+          <div>姓名清單</div>
+          <div class="stats" id="capacityNote">—</div>
+        </div>
+        <div id="nameList" class="name-list"></div>
+      </div>
+    </section>
+
+    <!-- 右側 -->
+    <section class="right">
+      <h1>抽籤分組 · 右側（抽卡與結果）</h1>
+      <div class="cards" id="cards"></div>
+      <div class="hint" id="hint">請先在左側點選一位同學的姓名，將為該同學產生可抽取的卡片。</div>
+
+      <div class="results-wrap">
+        <div class="list-head">
+          <div>分組結果</div>
+          <div class="stats" id="fillStats">—</div>
+        </div>
+        <div id="resultGrid" class="grid"></div>
+        <div class="footer-note">提示：若內容過長，左右區塊都可以個別捲動檢視。</div>
+      </div>
+    </section>
+  </div>
+
+  <script>
+  /*** 狀態 ***/
+  const state = {
+    students: [],              // { name, assigned: number | null }
+    groupingStarted: false,
+    G: 0,
+    capacities: [],            // 1..G: 剩餘名額
+    capacitiesInit: [],        // 初始名額 (顯示用)
+    selectedStudentIdx: null,  // 左側目前點選準備抽卡的學生 idx
+    bagForCards: [],           // 用於生成卡片的 groupID 袋子
+  };
+
+  /*** DOM 快取 ***/
+  const el = {
+    fileInput: document.getElementById('fileInput'),
+    btnImport: document.getElementById('btnImport'),
+    stats: document.getElementById('stats'),
+    capacityNote: document.getElementById('capacityNote'),
+    groupCount: document.getElementById('groupCount'),
+    btnStart: document.getElementById('btnStart'),
+    btnReset: document.getElementById('btnReset'),
+    nameList: document.getElementById('nameList'),
+    cards: document.getElementById('cards'),
+    hint: document.getElementById('hint'),
+    resultGrid: document.getElementById('resultGrid'),
+    fillStats: document.getElementById('fillStats'),
+  };
+
+  /*** 工具 ***/
+  const sleep = (ms)=> new Promise(r=>setTimeout(r, ms));
+  function shuffle(arr){
+    const a = arr.slice();
+    for(let i=a.length-1;i>0;i--){
+      const j = Math.floor(Math.random()*(i+1));
+      [a[i],a[j]]=[a[j],a[i]];
+    }
+    return a;
+  }
+
+  /*** 匯入姓名 ***/
+  el.btnImport.addEventListener('click', ()=> el.fileInput.click());
+  el.fileInput.addEventListener('change', async (e)=>{
+    const file = e.target.files?.[0];
+    if(!file) return;
+
+    // 重新匯入 → 視為整個流程重來
+    resetAll();
+
+    const text = await file.text(); // 預設依瀏覽器以 UTF-8 解析
+    const lines = text.split(/\r?\n/).map(s=>s.trim()).filter(Boolean);
+    state.students = lines.map(name=>({name, assigned:null}));
+
+    el.stats.textContent = `已匯入 ${state.students.length} 位`;
+    renderStudentList();
+    updateStartButtonState();
+  });
+
+  function updateStartButtonState(){
+    const g = parseInt(el.groupCount.value,10);
+    const gOk = Number.isInteger(g) && g>0;
+    el.btnStart.disabled = !(gOk && state.students.length>0 && !state.groupingStarted);
+  }
+  el.groupCount.addEventListener('input', updateStartButtonState);
+
+  /*** 開始 / 重新分組 ***/
+  el.btnStart.addEventListener('click', ()=>{
+    if(el.btnStart.disabled) return;
+    const g = parseInt(el.groupCount.value,10);
+    if(!Number.isInteger(g) || g<=0){
+      alert('請先輸入正確的組別數量 (G)');
+      return;
+    }
+    state.G = g;
+    state.groupingStarted = true;
+    // 計算容量：平均分配，前 remainder 組 +1
+    const N = state.students.length;
+    const base = Math.floor(N / g);
+    const r = N % g;
+    state.capacities = Array.from({length:g}, (_,i)=> base + (i<r?1:0));
+    state.capacitiesInit = state.capacities.slice();
+
+    // 鎖定/切換按鈕
+    el.groupCount.disabled = true;
+    el.btnStart.disabled = true;
+    el.btnReset.disabled = false;
+
+    renderCapacityNote();
+    buildResultGrid();
+    renderFillStats();
+  });
+
+  el.btnReset.addEventListener('click', ()=>{
+    // 清空所有分配，恢復 G 可改
+    if(!confirm('確定要重新分組？所有已分配結果將被清除。')) return;
+    state.groupingStarted = false;
+    state.G = 0;
+    state.capacities = [];
+    state.capacitiesInit = [];
+    state.selectedStudentIdx = null;
+    state.bagForCards = [];
+
+    // 左側姓名恢復可點
+    state.students = state.students.map(s=>({name:s.name, assigned:null}));
+    renderStudentList();
+
+    // 右側清空
+    el.resultGrid.className = 'grid';
+    el.resultGrid.innerHTML = '';
+    el.cards.innerHTML = '';
+    el.hint.textContent = '請先在左側點選一位同學的姓名，將為該同學產生可抽取的卡片。';
+    el.capacityNote.textContent = '—';
+    el.fillStats.textContent = '—';
+
+    // 按鈕與輸入
+    el.groupCount.disabled = false;
+    el.btnStart.disabled = true;
+    el.btnReset.disabled = true;
+  });
+
+  function resetAll(){
+    // 完整重置（用於重新匯入姓名）
+    state.students = [];
+    state.groupingStarted = false;
+    state.G = 0;
+    state.capacities = [];
+    state.capacitiesInit = [];
+    state.selectedStudentIdx = null;
+    state.bagForCards = [];
+
+    el.groupCount.value = '';
+    el.groupCount.disabled = false;
+    el.btnStart.disabled = true;
+    el.btnReset.disabled = true;
+
+    el.nameList.innerHTML = '';
+    el.resultGrid.className = 'grid';
+    el.resultGrid.innerHTML = '';
+    el.cards.innerHTML = '';
+    el.stats.textContent = '尚未匯入名單';
+    el.capacityNote.textContent = '—';
+    el.fillStats.textContent = '—';
+    el.hint.textContent = '請先在左側點選一位同學的姓名，將為該同學產生可抽取的卡片。';
+  }
+
+  function renderCapacityNote(){
+    if(!state.groupingStarted) return;
+    const parts = state.capacitiesInit.map((cap,i)=>`第${i+1}組：${cap} 人`);
+    el.capacityNote.textContent = `各組名額（初始）：${parts.join('，')}`;
+  }
+
+  /*** 左側姓名清單 ***/
+  function renderStudentList(){
+    const frag = document.createDocumentFragment();
+    state.students.forEach((s, idx)=>{
+      const div = document.createElement('div');
+      div.className = 'name-item' + (s.assigned!=null ? ' disabled' : '') + (state.selectedStudentIdx===idx? ' selected' : '');
+      div.textContent = s.name;
+      if(s.assigned==null){
+        div.addEventListener('click', ()=> onClickStudent(idx));
+      }
+      frag.appendChild(div);
+    });
+    el.nameList.innerHTML = '';
+    el.nameList.appendChild(frag);
+  }
+
+  function onClickStudent(idx){
+    if(!state.groupingStarted){
+      alert('請先按「開始分組」，再抽卡分組。');
+      return;
+    }
+    if(state.students[idx].assigned!=null) return;
+    state.selectedStudentIdx = idx;
+    renderStudentList();
+    prepareCards();
+  }
+
+  /*** 準備卡片（依剩餘名額生成 1~4 張） ***/
+  function prepareCards(){
+    // 建立 group 袋：依剩餘名額重複放入 groupId
+    const bag = [];
+    state.capacities.forEach((cap, i)=>{
+      for(let k=0;k<cap;k++) bag.push(i+1); // groupId 從 1 開始
+    });
+    // 所有組都滿了
+    if(bag.length===0){
+      el.cards.innerHTML = '';
+      el.hint.textContent = '所有組別均已滿員。';
+      return;
+    }
+    // 隨機抽取最多 4 張（不放回），但袋內可能有重複 groupId → 允許同組出現多張卡
+    const shuffled = shuffle(bag);
+    const pick = shuffled.slice(0, Math.min(4, shuffled.length));
+
+    // 依需求：卡片顏色固定藍、紅、綠、黃，但卡片順序（及對應組別）隨機
+    const colors = ['blue','red','green','yellow'];
+    const cardData = pick.map((gid, i)=>({ gid, color: colors[i] }));
+
+    el.cards.innerHTML = '';
+    cardData.forEach((c, idx)=> el.cards.appendChild(makeCard(c, idx)));
+    el.hint.textContent = `已選取「${state.students[state.selectedStudentIdx].name}」，請點擊上方卡片以決定分組。`;
+  }
+
+  /*** 生成單張卡片（覆蓋→翻牌動畫） ***/
+  function makeCard({gid, color}, index){
+    const holder = document.createElement('div');
+    holder.className = 'card covered';
+
+    const inner = document.createElement('div');
+    inner.className = 'card-inner';
+
+    const front = document.createElement('div');
+    front.className = `face front ${color}`;
+    front.textContent = '點我抽卡';
+
+    const back = document.createElement('div');
+    back.className = `face back ${color}`;
+    back.textContent = gid;
+
+    inner.appendChild(front);
+    inner.appendChild(back);
+    holder.appendChild(inner);
+
+    holder.addEventListener('click', async ()=>{
+      if(holder.classList.contains('revealed')) return;
+      // 翻牌
+      holder.classList.remove('covered');
+      holder.classList.add('revealed');
+      // 延遲等動畫更順
+      await sleep(320);
+      onPickGroup(gid, holder);
+    }, {once:true});
+
+    return holder;
+  }
+
+  /*** 點擊卡片 → 指派到該組 ***/
+  function onPickGroup(groupId, clickedCardEl){
+    const idx = state.selectedStudentIdx;
+    if(idx==null) return;
+
+    // 指派
+    state.students[idx].assigned = groupId;
+    state.capacities[groupId-1] = Math.max(0, state.capacities[groupId-1]-1);
+
+    // 左側：該學生灰字、取消選取
+    state.selectedStudentIdx = null;
+    renderStudentList();
+
+    // 右側：更新結果表
+    appendMemberToGroup(groupId, state.students[idx].name);
+    renderFillStats();
+
+    // 其他未翻的卡片禁用（保持覆蓋狀態即可）
+    Array.from(el.cards.children).forEach(card=>{
+      if(card!==clickedCardEl){
+        card.style.opacity = .5;
+        card.style.pointerEvents = 'none';
+      }
+    });
+
+    // 若尚有未滿組別，下次需要重新點姓名才會出現新一輪卡片
+    el.hint.textContent = '已完成分配。請在左側點選下一位同學以繼續抽卡。';
+  }
+
+  /*** 建立右側結果表格（G 欄） ***/
+  function buildResultGrid(){
+    const g = state.G;
+    el.resultGrid.className = 'grid cols-' + Math.min(g, 10);
+    el.resultGrid.innerHTML = '';
+
+    for(let i=1;i<=g;i++){
+      const col = document.createElement('div');
+      col.className='group-col';
+      col.dataset.groupId = String(i);
+
+      const head = document.createElement('div');
+      head.className='group-head';
+      const title = document.createElement('div');
+      title.className='group-title';
+      title.textContent = `第 ${i} 組`;
+      const cap = document.createElement('div');
+      cap.className='group-cap';
+      cap.id = `cap-${i}`;
+      cap.textContent = `剩餘：${state.capacities[i-1]} / 初始 ${state.capacitiesInit[i-1]}`;
+
+      head.appendChild(title); head.appendChild(cap);
+
+      const members = document.createElement('div');
+      members.className='members'; members.id = `members-${i}`;
+
+      col.appendChild(head); col.appendChild(members);
+      el.resultGrid.appendChild(col);
+    }
+  }
+
+  function appendMemberToGroup(groupId, name){
+    const members = document.getElementById(`members-${groupId}`);
+    const item = document.createElement('div');
+    item.className='member';
+    item.textContent = name;
+    members.appendChild(item);
+
+    // 更新該組 cap 顯示
+    const cap = document.getElementById(`cap-${groupId}`);
+    cap.textContent = `剩餘：${state.capacities[groupId-1]} / 初始 ${state.capacitiesInit[groupId-1]}`;
+  }
+
+  function renderFillStats(){
+    const assigned = state.students.filter(s=>s.assigned!=null).length;
+    const total = state.students.length;
+    el.fillStats.textContent = `已分配 ${assigned} / ${total}`;
+  }
+
+  </script>
+</body>
+</html>
