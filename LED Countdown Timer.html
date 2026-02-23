@@ -1,0 +1,1248 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>LED 倒數計時器（7:00 預設）</title>
+  <style>
+    :root{
+      --bg:#000000;
+      --panel:#0b0b0b;
+      --text:#f44336;        /* 預設紅 */
+      --dim: rgba(255,255,255,.06);
+      --glow: rgba(255,255,255,.18);
+      --warn1: #ffcc00;      /* 1:00 */
+      --warn2: #ff9800;      /* 0:30 */
+      --warn3: #ff3b30;      /* 0:10 */
+      --overtime: #b000ff;   /* 超時 */
+      --ok: #19ff4a;
+      --btnbg:#121212;
+      --btnbd:#2a2a2a;
+      --btnfg:#eaeaea;
+      --shadow: rgba(0,0,0,.55);
+    }
+
+    *{ box-sizing:border-box; }
+    html,body{ height:100%; }
+    body{
+      margin:0;
+      font-family: system-ui, -apple-system, "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", sans-serif;
+      background: var(--bg);
+      color: #eee;
+      overflow:hidden;
+    }
+
+    .wrap{
+      height:100%;
+      display:flex;
+      flex-direction:column;
+    }
+
+    /* ====== 顯示區 ====== */
+    .display{
+      flex: 1 1 auto;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      padding: min(3vw, 22px);
+      position:relative;
+      user-select:none;
+    }
+
+    .hud{
+      position:absolute;
+      left: min(2vw, 16px);
+      right: min(2vw, 16px);
+      top: min(2vw, 16px);
+      display:flex;
+      gap:12px;
+      align-items:center;
+      justify-content:space-between;
+      pointer-events:none;
+      opacity:.92;
+    }
+    .chip{
+      pointer-events:none;
+      display:inline-flex;
+      gap:10px;
+      align-items:center;
+      padding:8px 12px;
+      border:1px solid rgba(255,255,255,.12);
+      border-radius:999px;
+      background: rgba(0,0,0,.35);
+      box-shadow: 0 10px 30px var(--shadow);
+      font-size:14px;
+      letter-spacing:.3px;
+      backdrop-filter: blur(4px);
+    }
+    .chip strong{ font-weight:700; }
+    .chip .dot{
+      width:8px;height:8px;border-radius:50%;
+      background: rgba(255,255,255,.25);
+      box-shadow: 0 0 10px rgba(255,255,255,.18);
+    }
+    .chip .dot.running{ background: var(--ok); box-shadow:0 0 12px rgba(25,255,74,.35); }
+    .chip .dot.paused{ background: #ffd60a; box-shadow:0 0 12px rgba(255,214,10,.35); }
+    .chip .dot.overtime{ background: var(--overtime); box-shadow:0 0 12px rgba(176,0,255,.35); }
+
+    .led-box{
+      width: min(96vw, 1400px);
+      aspect-ratio: 16/5;
+      border-radius: min(2vw, 22px);
+      background: radial-gradient(1200px 600px at 50% 35%, rgba(255,255,255,.05), rgba(255,255,255,0) 60%),
+                  linear-gradient(180deg, rgba(255,255,255,.04), rgba(255,255,255,0));
+      outline: 1px solid rgba(255,255,255,.10);
+      box-shadow: 0 30px 120px rgba(0,0,0,.6), inset 0 0 0 1px rgba(255,255,255,.05);
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      padding: min(2vw, 22px);
+      position:relative;
+    }
+
+    /* 背景圖（A4） */
+    .bg-image{
+      position:absolute;
+      inset:0;
+      background-size:cover;
+      background-position:center;
+      opacity: .18;
+      filter: blur(0px) saturate(1.1) contrast(1.1);
+      border-radius: inherit;
+      pointer-events:none;
+    }
+    .bg-vignette{
+      position:absolute;
+      inset:0;
+      border-radius: inherit;
+      background: radial-gradient(900px 460px at 50% 40%, rgba(0,0,0,.15), rgba(0,0,0,.85) 70%);
+      pointer-events:none;
+    }
+
+    /* ====== 七段顯示（SVG） ====== */
+    .svg-wrap{
+      width:100%;
+      height:100%;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      padding: min(1vw, 10px);
+      position:relative;
+      z-index:1;
+    }
+
+    /* 閃爍 */
+    .flash .led-box{
+      animation: flash 1s steps(2, end) infinite;
+    }
+    @keyframes flash{
+      50%{ filter: brightness(0.7); }
+    }
+
+    /* ====== 控制區 ====== */
+    .controls{
+      flex: 0 0 auto;
+      padding: 14px 14px 18px;
+      background: linear-gradient(180deg, rgba(0,0,0,0), rgba(0,0,0,.55));
+      border-top: 1px solid rgba(255,255,255,.10);
+    }
+
+    .grid{
+      display:grid;
+      grid-template-columns: 1.2fr 1fr 1fr;
+      gap: 12px;
+      align-items:stretch;
+    }
+
+    .panel{
+      background: rgba(0,0,0,.35);
+      border: 1px solid rgba(255,255,255,.10);
+      border-radius: 16px;
+      padding: 12px;
+      box-shadow: 0 14px 40px rgba(0,0,0,.35);
+      backdrop-filter: blur(4px);
+      min-height: 112px;
+    }
+
+    .panel h3{
+      margin:0 0 8px 0;
+      font-size: 13px;
+      letter-spacing:.4px;
+      font-weight: 700;
+      opacity:.9;
+    }
+
+    .row{
+      display:flex;
+      flex-wrap:wrap;
+      gap:8px;
+      align-items:center;
+    }
+
+    button, input[type="text"], select{
+      border-radius: 12px;
+      border: 1px solid var(--btnbd);
+      background: var(--btnbg);
+      color: var(--btnfg);
+      padding: 10px 12px;
+      font-size: 14px;
+      outline:none;
+    }
+    button{
+      cursor:pointer;
+      box-shadow: 0 10px 18px rgba(0,0,0,.30);
+      transition: transform .04s ease, filter .15s ease, border-color .15s ease;
+      user-select:none;
+    }
+    button:active{ transform: translateY(1px); }
+    button:hover{ filter: brightness(1.06); border-color: rgba(255,255,255,.25); }
+
+    .btn-primary{
+      border-color: rgba(255,255,255,.24);
+      background: linear-gradient(180deg, rgba(255,255,255,.10), rgba(255,255,255,.04));
+    }
+    .btn-danger{
+      border-color: rgba(255,59,48,.35);
+    }
+    .btn-ghost{
+      background: rgba(255,255,255,.03);
+    }
+    .btn-small{ padding: 8px 10px; border-radius: 12px; }
+
+    .pill{
+      display:inline-flex;
+      align-items:center;
+      gap:8px;
+      padding:10px 12px;
+      border-radius: 12px;
+      border:1px solid rgba(255,255,255,.12);
+      background: rgba(255,255,255,.03);
+    }
+    .pill label{ font-size: 13px; opacity:.92; }
+    .pill input[type="color"]{
+      width: 36px;
+      height: 30px;
+      padding:0;
+      border-radius: 10px;
+      border: 1px solid rgba(255,255,255,.20);
+      background: transparent;
+    }
+
+    .hint{
+      font-size: 12px;
+      opacity:.75;
+      margin-top:8px;
+      line-height:1.35;
+    }
+
+    .kbd{
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+      border:1px solid rgba(255,255,255,.14);
+      border-bottom-color: rgba(255,255,255,.08);
+      padding: 1px 6px;
+      border-radius: 8px;
+      background: rgba(255,255,255,.04);
+      opacity:.92;
+      font-size: 12px;
+    }
+
+    /* 手機時堆疊 */
+    @media (max-width: 980px){
+      .grid{ grid-template-columns: 1fr; }
+      .led-box{ aspect-ratio: 16/7; }
+      .chip{ font-size:12px; }
+    }
+
+    /* 超時背景色（C3） */
+    .overtime-bg .led-box{
+      outline-color: rgba(176,0,255,.25);
+      box-shadow: 0 30px 120px rgba(176,0,255,.08), 0 30px 120px rgba(0,0,0,.6), inset 0 0 0 1px rgba(255,255,255,.05);
+    }
+  </style>
+</head>
+<body>
+<div class="wrap" id="app">
+  <div class="display">
+    <div class="hud">
+      <div class="chip">
+        <span class="dot" id="statusDot"></span>
+        <strong id="statusText">待機</strong>
+        <span id="modeText" style="opacity:.85;">倒數</span>
+      </div>
+      <div class="chip" id="soundChip">
+        <span style="opacity:.9;">音效</span>
+        <strong id="soundText">開</strong>
+        <span style="opacity:.75;" id="soundNote"></span>
+      </div>
+    </div>
+
+    <div class="led-box">
+      <div class="bg-image" id="bgImage"></div>
+      <div class="bg-vignette"></div>
+      <div class="svg-wrap">
+        <svg id="ledSvg" viewBox="0 0 1600 500" width="100%" height="100%" aria-label="LED timer"></svg>
+      </div>
+    </div>
+  </div>
+
+  <div class="controls">
+    <div class="grid">
+      <!-- Panel 1: 操作 -->
+      <div class="panel">
+        <h3>操作</h3>
+        <div class="row">
+          <button class="btn-primary" id="btnStartPause">開始</button>
+          <button class="btn-ghost" id="btnReset">重設</button>
+          <button class="btn-ghost" id="btnFullscreen">全螢幕</button>
+          <button class="btn-ghost" id="btnMute">無聲模式：關</button>
+        </div>
+        <div class="hint">
+          快捷鍵：<span class="kbd">Space</span>開始/暫停，
+          <span class="kbd">R</span>重設，
+          <span class="kbd">F</span>全螢幕，
+          <span class="kbd">M</span>無聲，
+          <span class="kbd">+</span>/<span class="kbd">-</span>±10秒，
+          <span class="kbd">[</span>/<span class="kbd">]</span>±30秒，
+          <span class="kbd">Shift</span>+<span class="kbd">+</span>/<span class="kbd">-</span>±1分
+        </div>
+      </div>
+
+      <!-- Panel 2: 時間設定 -->
+      <div class="panel">
+        <h3>時間設定</h3>
+        <div class="row">
+          <button class="btn-small" data-preset="60">1:00</button>
+          <button class="btn-small" data-preset="120">2:00</button>
+          <button class="btn-small" data-preset="180">3:00</button>
+          <button class="btn-small" data-preset="300">5:00</button>
+          <button class="btn-small btn-primary" data-preset="420">7:00</button>
+          <button class="btn-small" data-preset="600">10:00</button>
+        </div>
+        <div class="row" style="margin-top:10px;">
+          <input id="timeInput" type="text" inputmode="numeric" placeholder="輸入 mm:ss 或 秒數（例 7:00 / 420）" style="flex:1 1 340px;"/>
+          <button id="btnApply">套用</button>
+        </div>
+        <div class="row" style="margin-top:10px;">
+          <button class="btn-small" data-adjust="-60">-1分</button>
+          <button class="btn-small" data-adjust="-30">-30秒</button>
+          <button class="btn-small" data-adjust="-10">-10秒</button>
+          <button class="btn-small" data-adjust="10">+10秒</button>
+          <button class="btn-small" data-adjust="30">+30秒</button>
+          <button class="btn-small" data-adjust="60">+1分</button>
+        </div>
+        <div class="hint">到 0 會自動切換為 <b>超時正計時</b>（+00:01, +00:02…）。</div>
+      </div>
+
+      <!-- Panel 3: 外觀 / 格式 -->
+      <div class="panel">
+        <h3>外觀 / 格式</h3>
+        <div class="row">
+          <span class="pill">
+            <label>顏色</label>
+            <select id="themeSelect">
+              <option value="red" selected>紅</option>
+              <option value="green">綠</option>
+              <option value="blue">藍</option>
+              <option value="yellow">黃</option>
+              <option value="white">白</option>
+              <option value="custom">自訂</option>
+            </select>
+            <input id="customColor" type="color" value="#f44336" title="自訂顏色" />
+          </span>
+
+          <span class="pill">
+            <label>背景</label>
+            <select id="bgSelect">
+              <option value="black" selected>純黑</option>
+              <option value="dark">深灰</option>
+              <option value="image">背景圖</option>
+            </select>
+            <input id="bgFile" type="file" accept="image/*" style="width: 210px;" />
+          </span>
+        </div>
+
+        <div class="row" style="margin-top:10px;">
+          <span class="pill">
+            <label>格式</label>
+            <select id="formatSelect">
+              <option value="mmss" selected>mm:ss</option>
+              <option value="hhmmss">hh:mm:ss</option>
+              <option value="ss">純秒</option>
+            </select>
+          </span>
+
+          <span class="pill">
+            <label>音效</label>
+            <select id="soundSelect">
+              <option value="on" selected>開</option>
+              <option value="off">關</option>
+            </select>
+          </span>
+        </div>
+
+        <div class="hint">
+          提醒規則：剩 <b>1:00 / 0:30 / 0:10</b> 會變色；最後 10 秒可閃爍；超時背景變色。<br/>
+          ※ 音效需要你至少按一次按鈕，瀏覽器才允許發聲。
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(() => {
+  // =========================
+  // 狀態
+  // =========================
+  const DEFAULT_SECONDS = 7 * 60; // 7:00
+  const STORAGE_KEY = "led_timer_v1_state";
+
+  const state = {
+    running: false,
+    overtime: false,
+    // 倒數：remainingMs >= 0
+    remainingMs: DEFAULT_SECONDS * 1000,
+    // 超時：overtimeMs >= 0（正計時）
+    overtimeMs: 0,
+
+    lastTickTs: 0,
+
+    format: "mmss",         // mmss | hhmmss | ss
+    theme: "red",           // red|green|blue|yellow|white|custom
+    customColor: "#f44336",
+    bgMode: "black",        // black|dark|image
+    bgDataUrl: "",
+    soundEnabled: true,     // 音效開關（C2）
+    silentMode: false,      // 無聲模式（C4）
+    // 警示只在倒數時判斷
+    warned: { w60:false, w30:false, w10:false, end:false, beepCountdown:false },
+  };
+
+  // =========================
+  // DOM
+  // =========================
+  const app = document.getElementById("app");
+  const ledSvg = document.getElementById("ledSvg");
+  const statusDot = document.getElementById("statusDot");
+  const statusText = document.getElementById("statusText");
+  const modeText = document.getElementById("modeText");
+  const soundChip = document.getElementById("soundChip");
+  const soundText = document.getElementById("soundText");
+  const soundNote = document.getElementById("soundNote");
+
+  const btnStartPause = document.getElementById("btnStartPause");
+  const btnReset = document.getElementById("btnReset");
+  const btnFullscreen = document.getElementById("btnFullscreen");
+  const btnMute = document.getElementById("btnMute");
+
+  const timeInput = document.getElementById("timeInput");
+  const btnApply = document.getElementById("btnApply");
+
+  const themeSelect = document.getElementById("themeSelect");
+  const customColor = document.getElementById("customColor");
+  const bgSelect = document.getElementById("bgSelect");
+  const bgFile = document.getElementById("bgFile");
+  const bgImage = document.getElementById("bgImage");
+  const formatSelect = document.getElementById("formatSelect");
+  const soundSelect = document.getElementById("soundSelect");
+
+  // =========================
+  // 音效（WebAudio, C2）
+  // =========================
+  let audioCtx = null;
+  function ensureAudio() {
+    if (!audioCtx) {
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    }
+    if (audioCtx.state === "suspended") audioCtx.resume();
+  }
+
+  function beep(freq=880, dur=0.07, gain=0.06) {
+    if (!state.soundEnabled || state.silentMode) return;
+    try{
+      ensureAudio();
+      const o = audioCtx.createOscillator();
+      const g = audioCtx.createGain();
+      o.type = "square";
+      o.frequency.value = freq;
+      g.gain.value = gain;
+      o.connect(g); g.connect(audioCtx.destination);
+      o.start();
+      o.stop(audioCtx.currentTime + dur);
+    }catch(e){
+      // ignore
+    }
+  }
+
+  function playCue(type){
+    // 預告音/結束音/最後十秒嗶
+    if (!state.soundEnabled || state.silentMode) return;
+    if (type === "w30") beep(740, 0.08, 0.06);
+    if (type === "w10") beep(880, 0.08, 0.07);
+    if (type === "end") {
+      beep(988, 0.10, 0.08);
+      setTimeout(()=>beep(784, 0.10, 0.08), 120);
+    }
+    if (type === "tick") beep(1200, 0.04, 0.04);
+  }
+
+  // =========================
+  // 七段（SVG 繪製）
+  // =========================
+  // 每個數字由 7 個 segment 組成，定義哪些 segment 亮
+  // segment index: 0 top, 1 upper-right, 2 lower-right, 3 bottom, 4 lower-left, 5 upper-left, 6 middle
+  const DIGIT_SEG = {
+    "0":[1,1,1,1,1,1,0],
+    "1":[0,1,1,0,0,0,0],
+    "2":[1,1,0,1,1,0,1],
+    "3":[1,1,1,1,0,0,1],
+    "4":[0,1,1,0,0,1,1],
+    "5":[1,0,1,1,0,1,1],
+    "6":[1,0,1,1,1,1,1],
+    "7":[1,1,1,0,0,0,0],
+    "8":[1,1,1,1,1,1,1],
+    "9":[1,1,1,1,0,1,1],
+    "-":[0,0,0,0,0,0,1],
+    " ":[0,0,0,0,0,0,0],
+  };
+
+  function svgEl(name, attrs={}){
+    const el = document.createElementNS("http://www.w3.org/2000/svg", name);
+    for (const [k,v] of Object.entries(attrs)) el.setAttribute(k, v);
+    return el;
+  }
+
+  // 生成一個 digit group（含 7 個 segment path）
+  function makeDigit(x, y, w, h){
+    const g = svgEl("g", { transform:`translate(${x},${y})` });
+    // Segment thickness
+    const t = Math.max(8, Math.min(w,h) * 0.12);
+    const r = t * 0.55; // roundness
+
+    // Utility: rounded rect path
+    function rr(x,y,w,h,r){
+      return `M${x+r},${y} H${x+w-r} Q${x+w},${y} ${x+w},${y+r} V${y+h-r} Q${x+w},${y+h} ${x+w-r},${y+h} H${x+r} Q${x},${y+h} ${x},${y+h-r} V${y+r} Q${x},${y} ${x+r},${y} Z`;
+    }
+
+    const pad = t*0.35;
+    const seg = [];
+
+    // top
+    seg[0] = svgEl("path", { d: rr(pad, 0, w-2*pad, t, r) });
+    // upper-right
+    seg[1] = svgEl("path", { d: rr(w-t, pad, t, h/2 - pad*1.2, r) });
+    // lower-right
+    seg[2] = svgEl("path", { d: rr(w-t, h/2 + pad*0.2, t, h/2 - pad*1.2, r) });
+    // bottom
+    seg[3] = svgEl("path", { d: rr(pad, h-t, w-2*pad, t, r) });
+    // lower-left
+    seg[4] = svgEl("path", { d: rr(0, h/2 + pad*0.2, t, h/2 - pad*1.2, r) });
+    // upper-left
+    seg[5] = svgEl("path", { d: rr(0, pad, t, h/2 - pad*1.2, r) });
+    // middle
+    seg[6] = svgEl("path", { d: rr(pad, h/2 - t/2, w-2*pad, t, r) });
+
+    for (const s of seg){
+      s.setAttribute("fill", "var(--dim)");
+      s.setAttribute("filter", "url(#glow)");
+      g.appendChild(s);
+    }
+
+    return { g, seg };
+  }
+
+  function makeColon(x, y, size){
+    const g = svgEl("g", { transform:`translate(${x},${y})` });
+    const r = size * 0.12;
+    const cx = size*0.2;
+    const top = svgEl("circle",{ cx, cy:size*0.32, r });
+    const bot = svgEl("circle",{ cx, cy:size*0.68, r });
+    for (const c of [top, bot]){
+      c.setAttribute("fill","var(--dim)");
+      c.setAttribute("filter","url(#glow)");
+      g.appendChild(c);
+    }
+    return { g, dots:[top,bot] };
+  }
+
+  function makePlus(x, y, size){
+    const g = svgEl("g",{ transform:`translate(${x},${y})` });
+    const t = size*0.10;
+    const r = t*0.6;
+    function rr(x,y,w,h,r){
+      return `M${x+r},${y} H${x+w-r} Q${x+w},${y} ${x+w},${y+r} V${y+h-r} Q${x+w},${y+h} ${x+w-r},${y+h} H${x+r} Q${x},${y+h} ${x},${y+h-r} V${y+r} Q${x},${y} ${x+r},${y} Z`;
+    }
+    const cx = size*0.28;
+    const cy = size*0.50;
+    const horiz = svgEl("path",{ d: rr(cx - size*0.18, cy - t/2, size*0.36, t, r) });
+    const vert  = svgEl("path",{ d: rr(cx - t/2, cy - size*0.18, t, size*0.36, r) });
+    for (const p of [horiz, vert]){
+      p.setAttribute("fill","var(--dim)");
+      p.setAttribute("filter","url(#glow)");
+      g.appendChild(p);
+    }
+    return { g, parts:[horiz, vert] };
+  }
+
+  // 建立整個 LED 版面（依格式動態）
+  let layout = null;
+  function buildLayout(){
+    while(ledSvg.firstChild) ledSvg.removeChild(ledSvg.firstChild);
+
+    // defs: glow filter
+    const defs = svgEl("defs");
+    const filter = svgEl("filter",{ id:"glow", x:"-30%", y:"-30%", width:"160%", height:"160%" });
+    const blur = svgEl("feGaussianBlur",{ stdDeviation:"2.2", result:"b" });
+    const merge = svgEl("feMerge");
+    const m1 = svgEl("feMergeNode",{ in:"b" });
+    const m2 = svgEl("feMergeNode",{ in:"SourceGraphic" });
+    merge.appendChild(m1); merge.appendChild(m2);
+    filter.appendChild(blur); filter.appendChild(merge);
+    defs.appendChild(filter);
+    ledSvg.appendChild(defs);
+
+    // 根據 format 決定要顯示的字元格
+    // 我們統一用「字元序列」來畫：可含 '+'、數字、':'。
+    const chars = getDisplayChars(0, false, true); // 先用示例
+    // 算寬：digit 寬/高比約 0.6
+    const H = 420;
+    const digitH = H;
+    const digitW = 240;
+    const colonW = 150;
+    const plusW = 90;
+
+    // 先估總寬
+    let total = 0;
+    for (const ch of chars){
+      if (ch === ":") total += colonW;
+      else if (ch === "+") total += plusW;
+      else total += digitW;
+      total += 24; // gap
+    }
+    total -= 24;
+
+    // 置中
+    const startX = (1600 - total) / 2;
+    const y = (500 - digitH) / 2;
+
+    const items = [];
+    let x = startX;
+
+    // plus 若出現，置於最前
+    for (const ch of chars){
+      if (ch === ":"){
+        const colon = makeColon(x, y, digitH);
+        ledSvg.appendChild(colon.g);
+        items.push({ type:"colon", ...colon });
+        x += colonW + 24;
+      } else if (ch === "+"){
+        const plus = makePlus(x, y, digitH);
+        ledSvg.appendChild(plus.g);
+        items.push({ type:"plus", ...plus });
+        x += plusW + 24;
+      } else {
+        const d = makeDigit(x, y, digitW, digitH);
+        ledSvg.appendChild(d.g);
+        items.push({ type:"digit", ...d, ch:" " });
+        x += digitW + 24;
+      }
+    }
+
+    layout = { items, charsTemplate: chars };
+  }
+
+  // =========================
+  // 顯示字串（A5 + B5）
+  // =========================
+  function pad2(n){ return String(n).padStart(2,"0"); }
+  function getDisplayChars(ms, overtime=false, templateOnly=false){
+    // 回傳字元陣列，用於 layout
+    // templateOnly: 用於 buildLayout（只是確定字數/型態）
+    const fmt = state.format;
+
+    if (fmt === "ss"){
+      // 純秒：倒數顯示剩餘秒（不含小數），超時顯示 +秒
+      // 這裡固定顯示 5 位數（最多 99999），保留對齊：例如 "  420"
+      // 但使用七段 digit，故用空白補。
+      const sec = templateOnly ? 0 : Math.floor(ms/1000);
+      let s = String(Math.abs(sec));
+      if (s.length < 5) s = " ".repeat(5 - s.length) + s;
+      const prefix = overtime ? ["+"] : [];
+      return prefix.concat([...s]);
+    }
+
+    if (fmt === "hhmmss"){
+      const totalSec = templateOnly ? 0 : Math.floor(ms/1000);
+      const abs = Math.abs(totalSec);
+      const hh = Math.floor(abs / 3600);
+      const mm = Math.floor((abs % 3600) / 60);
+      const ss = abs % 60;
+      const s = `${pad2(hh)}:${pad2(mm)}:${pad2(ss)}`;
+      return (overtime ? ["+"] : []).concat([...s]);
+    }
+
+    // mm:ss（預設）
+    const totalSec = templateOnly ? 0 : Math.floor(ms/1000);
+    const abs = Math.abs(totalSec);
+    const mm = Math.floor(abs / 60);
+    const ss = abs % 60;
+    // mm 不固定兩位（讓 7:00 顯示 07:00 也行，但你投影通常希望大字好讀）
+    // 這裡採「至少 2 位」：07:00；超過 99 也能顯示 120:00（會自動多一位）
+    let mmStr = String(mm);
+    if (mmStr.length < 2) mmStr = "0" + mmStr;
+    const s = `${mmStr}:${pad2(ss)}`;
+    return (overtime ? ["+"] : []).concat([...s]);
+  }
+
+  function getDisplayMs(){
+    return state.overtime ? state.overtimeMs : state.remainingMs;
+  }
+
+  function renderDisplay(){
+    if (!layout) buildLayout();
+
+    // 取得目前應顯示的字元（依格式決定）
+    const ms = getDisplayMs();
+    const chars = getDisplayChars(ms, state.overtime, false);
+
+    // 若格式切換造成 layout 字元類型/數量不同，重建
+    const templ = getDisplayChars(0, false, true);
+    const templ2 = getDisplayChars(0, true, true);
+    const needsRebuild =
+      !layout ||
+      layout.charsTemplate.length !== (state.overtime ? templ2.length : templ.length) ||
+      // ':' '+' 的位置型態不同也要重建
+      !sameShape(layout.charsTemplate, state.overtime ? templ2 : templ);
+
+    if (needsRebuild){
+      buildLayout();
+    }
+
+    // 套用顏色（依警示狀態）
+    const color = pickLedColor();
+    setCssLedColor(color);
+
+    // 更新各 item
+    let idx = 0;
+    for (const item of layout.items){
+      const ch = chars[idx++] ?? " ";
+      if (item.type === "digit"){
+        const mask = DIGIT_SEG[ch] || DIGIT_SEG[" "];
+        for (let i=0;i<7;i++){
+          item.seg[i].setAttribute("fill", mask[i] ? "var(--text)" : "var(--dim)");
+        }
+      } else if (item.type === "colon"){
+        // colon always on
+        for (const c of item.dots) c.setAttribute("fill", "var(--text)");
+      } else if (item.type === "plus"){
+        const on = state.overtime;
+        for (const p of item.parts) p.setAttribute("fill", on ? "var(--text)" : "var(--dim)");
+      }
+    }
+
+    // HUD
+    if (state.running){
+      statusText.textContent = "進行中";
+      statusDot.className = "dot running";
+    } else {
+      statusText.textContent = (state.overtime && ms>0) ? "暫停" : "待機";
+      statusDot.className = "dot paused";
+    }
+    if (state.overtime){
+      modeText.textContent = "超時";
+      statusDot.className = state.running ? "dot overtime" : "dot paused";
+      app.classList.add("overtime-bg");
+    } else {
+      modeText.textContent = "倒數";
+      app.classList.remove("overtime-bg");
+    }
+
+    // 音效顯示
+    soundText.textContent = state.soundEnabled ? (state.silentMode ? "無聲" : "開") : "關";
+    soundNote.textContent = (!state.soundEnabled) ? "" : (state.silentMode ? "" : "");
+  }
+
+  function sameShape(a,b){
+    if (a.length !== b.length) return false;
+    for (let i=0;i<a.length;i++){
+      const x=a[i], y=b[i];
+      const t1 = (x === ":" ? ":" : x === "+" ? "+" : "d");
+      const t2 = (y === ":" ? ":" : y === "+" ? "+" : "d");
+      if (t1 !== t2) return false;
+    }
+    return true;
+  }
+
+  function setCssLedColor(hex){
+    document.documentElement.style.setProperty("--text", hex);
+  }
+
+  function pickLedColor(){
+    // 依 C1/C3 狀態挑顏色
+    if (state.overtime) return getThemeColor("overtime");
+    const sec = Math.ceil(state.remainingMs/1000);
+
+    if (sec <= 10) return getThemeColor("warn3");
+    if (sec <= 30) return getThemeColor("warn2");
+    if (sec <= 60) return getThemeColor("warn1");
+    return getThemeColor("base");
+  }
+
+  function getThemeColor(kind){
+    // kind: base | warn1 | warn2 | warn3 | overtime
+    if (kind === "warn1") return getCssVar("--warn1");
+    if (kind === "warn2") return getCssVar("--warn2");
+    if (kind === "warn3") return getCssVar("--warn3");
+    if (kind === "overtime") return getCssVar("--overtime");
+
+    // base
+    switch(state.theme){
+      case "red": return "#f44336";
+      case "green": return "#19ff4a";
+      case "blue": return "#40c4ff";
+      case "yellow": return "#ffcc00";
+      case "white": return "#f2f2f2";
+      case "custom": return state.customColor || "#f44336";
+      default: return "#f44336";
+    }
+  }
+
+  function getCssVar(name){
+    return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  }
+
+  // =========================
+  // 計時（B1/B5 + C1/C3）
+  // =========================
+  function start(){
+    if (state.running) return;
+    state.running = true;
+    state.lastTickTs = performance.now();
+    btnStartPause.textContent = "暫停";
+    tick();
+    saveState();
+  }
+
+  function pause(){
+    if (!state.running) return;
+    state.running = false;
+    btnStartPause.textContent = "繼續";
+    saveState();
+  }
+
+  function reset(){
+    state.running = false;
+    state.overtime = false;
+    state.remainingMs = DEFAULT_SECONDS * 1000;
+    state.overtimeMs = 0;
+    state.warned = { w60:false, w30:false, w10:false, end:false, beepCountdown:false };
+    btnStartPause.textContent = "開始";
+    app.classList.remove("flash");
+    renderDisplay();
+    saveState();
+  }
+
+  function setTimeSeconds(sec){
+    sec = Math.max(0, Math.floor(sec));
+    state.running = false;
+    state.overtime = false;
+    state.remainingMs = sec * 1000;
+    state.overtimeMs = 0;
+    state.warned = { w60:false, w30:false, w10:false, end:false, beepCountdown:false };
+    btnStartPause.textContent = "開始";
+    app.classList.remove("flash");
+    renderDisplay();
+    saveState();
+  }
+
+  function adjustSeconds(delta){
+    // 倒數時調整 remaining；超時時調整 overtime（允許回到 0）
+    if (!state.overtime){
+      const newMs = Math.max(0, state.remainingMs + delta*1000);
+      state.remainingMs = newMs;
+      // 調整後重置警示，避免跳秒錯過
+      state.warned = { w60:false, w30:false, w10:false, end:false, beepCountdown:false };
+      app.classList.remove("flash");
+    } else {
+      state.overtimeMs = Math.max(0, state.overtimeMs + delta*1000);
+    }
+    renderDisplay();
+    saveState();
+  }
+
+  function tick(){
+    if (!state.running) return;
+
+    const now = performance.now();
+    const dt = now - state.lastTickTs;
+    state.lastTickTs = now;
+
+    if (!state.overtime){
+      state.remainingMs = Math.max(0, state.remainingMs - dt);
+      handleWarnings();
+      if (state.remainingMs <= 0){
+        // 到 0：切換成超時正計時（B5）
+        if (!state.warned.end){
+          state.warned.end = true;
+          playCue("end");
+        }
+        state.overtime = true;
+        state.overtimeMs = 0;
+        // 超時背景變色在 renderDisplay 裡做
+        app.classList.remove("flash");
+      }
+    } else {
+      state.overtimeMs += dt;
+      // 超時不做倒數警示
+    }
+
+    renderDisplay();
+    saveStateThrottled();
+
+    requestAnimationFrame(tick);
+  }
+
+  function handleWarnings(){
+    // C1/C2/C3：只在倒數時
+    const sec = Math.ceil(state.remainingMs/1000);
+
+    // 1:00
+    if (sec <= 60 && !state.warned.w60){
+      state.warned.w60 = true;
+      // 可選：此處不一定要音效
+    }
+    // 0:30
+    if (sec <= 30 && !state.warned.w30){
+      state.warned.w30 = true;
+      playCue("w30");
+    }
+    // 0:10
+    if (sec <= 10 && !state.warned.w10){
+      state.warned.w10 = true;
+      playCue("w10");
+    }
+
+    // 末 10 秒閃爍（C3）
+    if (sec <= 10 && sec > 0){
+      // 用「整秒」來做閃，每秒一次
+      // 這裡簡單用 class 讓它 step flash
+      app.classList.add("flash");
+      // 最後十秒每秒短嗶（可選：你說 C2 需要音效提醒，我就預設開）
+      // 但避免重複：以秒數改變為觸發
+      if (state.soundEnabled && !state.silentMode){
+        const key = sec; // 10..1
+        if (state.warned.beepCountdown !== key){
+          state.warned.beepCountdown = key;
+          playCue("tick");
+        }
+      }
+    } else {
+      app.classList.remove("flash");
+    }
+  }
+
+  // =========================
+  // localStorage（F2）
+  // =========================
+  let saveTimer = null;
+  function saveStateThrottled(){
+    if (saveTimer) return;
+    saveTimer = setTimeout(() => {
+      saveTimer = null;
+      saveState();
+    }, 250);
+  }
+
+  function saveState(){
+    const data = {
+      ...state,
+      // warned 不存，避免 reload 後音效狂響；但我們存「剩餘/超時」即可
+      warned: undefined,
+      savedAt: Date.now(),
+    };
+    try{
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    }catch(e){}
+  }
+
+  function loadState(){
+    try{
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (!raw) return;
+      const data = JSON.parse(raw);
+
+      // 只載入可用欄位
+      if (typeof data.remainingMs === "number") state.remainingMs = data.remainingMs;
+      if (typeof data.overtimeMs === "number") state.overtimeMs = data.overtimeMs;
+      if (typeof data.running === "boolean") state.running = data.running;
+      if (typeof data.overtime === "boolean") state.overtime = data.overtime;
+
+      if (typeof data.format === "string") state.format = data.format;
+      if (typeof data.theme === "string") state.theme = data.theme;
+      if (typeof data.customColor === "string") state.customColor = data.customColor;
+      if (typeof data.bgMode === "string") state.bgMode = data.bgMode;
+      if (typeof data.bgDataUrl === "string") state.bgDataUrl = data.bgDataUrl;
+
+      if (typeof data.soundEnabled === "boolean") state.soundEnabled = data.soundEnabled;
+      if (typeof data.silentMode === "boolean") state.silentMode = data.silentMode;
+
+      // reload 後，若之前是 running，要扣掉「離線期間」的時間
+      // 這裡以 savedAt 推估經過時間（簡單可靠）
+      if (data.savedAt && state.running){
+        const elapsed = Date.now() - data.savedAt;
+        if (!state.overtime){
+          state.remainingMs = Math.max(0, state.remainingMs - elapsed);
+          if (state.remainingMs <= 0){
+            state.overtime = true;
+            state.overtimeMs = 0; // 你也可改成把超時也補上，但這樣最不會嚇到
+          }
+        } else {
+          state.overtimeMs = Math.max(0, state.overtimeMs + elapsed);
+        }
+      }
+
+      state.warned = { w60:false, w30:false, w10:false, end:false, beepCountdown:false };
+    }catch(e){}
+  }
+
+  // =========================
+  // 背景（A4）
+  // =========================
+  function applyBackground(){
+    if (state.bgMode === "black"){
+      document.documentElement.style.setProperty("--bg", "#000000");
+      bgImage.style.backgroundImage = "";
+      bgImage.style.opacity = 0;
+    } else if (state.bgMode === "dark"){
+      document.documentElement.style.setProperty("--bg", "#111111");
+      bgImage.style.backgroundImage = "";
+      bgImage.style.opacity = 0;
+    } else if (state.bgMode === "image"){
+      document.documentElement.style.setProperty("--bg", "#000000");
+      if (state.bgDataUrl){
+        bgImage.style.backgroundImage = `url(${state.bgDataUrl})`;
+        bgImage.style.opacity = 0.20;
+      } else {
+        bgImage.style.backgroundImage = "";
+        bgImage.style.opacity = 0;
+      }
+    }
+  }
+
+  // =========================
+  // UI 事件
+  // =========================
+  btnStartPause.addEventListener("click", () => {
+    // 音效需要 user gesture
+    ensureAudio();
+    if (!state.running) start();
+    else pause();
+    renderDisplay();
+  });
+
+  btnReset.addEventListener("click", () => {
+    ensureAudio();
+    reset();
+  });
+
+  btnFullscreen.addEventListener("click", async () => {
+    ensureAudio();
+    try{
+      if (!document.fullscreenElement){
+        await document.documentElement.requestFullscreen();
+      } else {
+        await document.exitFullscreen();
+      }
+    }catch(e){}
+  });
+
+  btnMute.addEventListener("click", () => {
+    ensureAudio();
+    state.silentMode = !state.silentMode;
+    btnMute.textContent = `無聲模式：${state.silentMode ? "開" : "關"}`;
+    renderDisplay();
+    saveState();
+  });
+
+  // Presets
+  document.querySelectorAll("[data-preset]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      ensureAudio();
+      const sec = Number(btn.getAttribute("data-preset"));
+      setTimeSeconds(sec);
+    });
+  });
+
+  // Adjust
+  document.querySelectorAll("[data-adjust]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      ensureAudio();
+      const d = Number(btn.getAttribute("data-adjust"));
+      adjustSeconds(d);
+    });
+  });
+
+  btnApply.addEventListener("click", () => {
+    ensureAudio();
+    const v = (timeInput.value || "").trim();
+    const sec = parseTimeToSec(v);
+    if (sec == null) {
+      timeInput.value = "";
+      timeInput.placeholder = "格式錯誤：例 7:00 或 420";
+      return;
+    }
+    setTimeSeconds(sec);
+    timeInput.value = "";
+  });
+
+  function parseTimeToSec(s){
+    if (!s) return null;
+    if (/^\d+$/.test(s)) return Number(s); // 純秒
+    const m = s.match(/^(\d+)\s*:\s*([0-5]?\d)$/);
+    if (m){
+      const mm = Number(m[1]);
+      const ss = Number(m[2]);
+      return mm*60 + ss;
+    }
+    const h = s.match(/^(\d+)\s*:\s*([0-5]\d)\s*:\s*([0-5]\d)$/);
+    if (h){
+      const hh = Number(h[1]);
+      const mm = Number(h[2]);
+      const ss = Number(h[3]);
+      return hh*3600 + mm*60 + ss;
+    }
+    return null;
+  }
+
+  // Theme
+  themeSelect.addEventListener("change", () => {
+    state.theme = themeSelect.value;
+    renderDisplay();
+    saveState();
+  });
+  customColor.addEventListener("input", () => {
+    state.customColor = customColor.value;
+    if (state.theme === "custom"){
+      renderDisplay();
+      saveStateThrottled();
+    }
+  });
+
+  // Background
+  bgSelect.addEventListener("change", () => {
+    state.bgMode = bgSelect.value;
+    applyBackground();
+    saveState();
+  });
+
+  bgFile.addEventListener("change", async () => {
+    const file = bgFile.files && bgFile.files[0];
+    if (!file) return;
+    const dataUrl = await fileToDataUrl(file);
+    state.bgDataUrl = dataUrl;
+    state.bgMode = "image";
+    bgSelect.value = "image";
+    applyBackground();
+    saveState();
+  });
+
+  function fileToDataUrl(file){
+    return new Promise((res, rej) => {
+      const fr = new FileReader();
+      fr.onload = () => res(String(fr.result));
+      fr.onerror = rej;
+      fr.readAsDataURL(file);
+    });
+  }
+
+  // Format
+  formatSelect.addEventListener("change", () => {
+    state.format = formatSelect.value;
+    buildLayout();
+    renderDisplay();
+    saveState();
+  });
+
+  // Sound on/off
+  soundSelect.addEventListener("change", () => {
+    state.soundEnabled = (soundSelect.value === "on");
+    renderDisplay();
+    saveState();
+  });
+
+  // Keyboard shortcuts (D1)
+  window.addEventListener("keydown", (e) => {
+    if (e.repeat) return;
+    const k = e.key;
+
+    if (k === " "){ e.preventDefault(); ensureAudio(); state.running ? pause() : start(); renderDisplay(); return; }
+    if (k === "r" || k === "R"){ ensureAudio(); reset(); return; }
+    if (k === "f" || k === "F"){ ensureAudio(); btnFullscreen.click(); return; }
+    if (k === "m" || k === "M"){ ensureAudio(); state.silentMode = !state.silentMode; btnMute.textContent = `無聲模式：${state.silentMode ? "開" : "關"}`; renderDisplay(); saveState(); return; }
+
+    // + / - with shift for minutes
+    if (k === "+" || (k === "=" && e.shiftKey)){
+      ensureAudio();
+      adjustSeconds(e.shiftKey ? 60 : 10);
+      return;
+    }
+    if (k === "-" || k === "_"){
+      ensureAudio();
+      adjustSeconds(e.shiftKey ? -60 : -10);
+      return;
+    }
+    if (k === "["){ ensureAudio(); adjustSeconds(-30); return; }
+    if (k === "]"){ ensureAudio(); adjustSeconds(30); return; }
+
+    // Preset keys: 1/2/3/5/7/0(10)
+    if ("12357".includes(k)){
+      ensureAudio();
+      setTimeSeconds(Number(k) * 60);
+      return;
+    }
+    if (k === "0"){
+      ensureAudio();
+      setTimeSeconds(10 * 60);
+      return;
+    }
+  });
+
+  // 防誤關（F1）
+  window.addEventListener("beforeunload", (e) => {
+    // 只要正在跑就提醒
+    if (state.running){
+      e.preventDefault();
+      e.returnValue = "";
+    }
+  });
+
+  // =========================
+  // 初始化
+  // =========================
+  function syncUiFromState(){
+    themeSelect.value = state.theme;
+    customColor.value = state.customColor || "#f44336";
+    bgSelect.value = state.bgMode;
+    formatSelect.value = state.format;
+    soundSelect.value = state.soundEnabled ? "on" : "off";
+    btnMute.textContent = `無聲模式：${state.silentMode ? "開" : "關"}`;
+    btnStartPause.textContent = state.running ? "暫停" : (state.remainingMs === DEFAULT_SECONDS*1000 && !state.overtime ? "開始" : "開始");
+  }
+
+  loadState();
+  applyBackground();
+  syncUiFromState();
+  buildLayout();
+  renderDisplay();
+
+  // 若載入後是 running，自動接續
+  if (state.running){
+    state.lastTickTs = performance.now();
+    requestAnimationFrame(tick);
+    btnStartPause.textContent = "暫停";
+  }
+
+})();
+</script>
+</body>
+</html>
